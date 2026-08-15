@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<title>Flappy Dimensions</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;touch-action:none;font-family:Arial,sans-serif}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+#score{position:fixed;top:8px;left:0;right:0;text-align:center;color:#fff;font-size:42px;font-weight:700;text-shadow:2px 2px 5px #000;pointer-events:none;z-index:5}
+#highscore,#coins{position:fixed;left:12px;color:#fff;font-weight:700;text-shadow:1px 1px 4px #000;pointer-events:none;z-index:5}
+#highscore{top:58px;font-size:17px}#coins{top:84px;font-size:19px;color:#ffe34c}
+#message{position:fixed;top:125px;left:0;right:0;text-align:center;color:#fff;font-size:23px;font-weight:700;text-shadow:2px 2px 5px #000;pointer-events:none;z-index:5}
+#shopButton{position:fixed;right:12px;top:12px;z-index:10;border:0;border-radius:12px;padding:11px 15px;background:#ffd83d;color:#111;font-size:16px;font-weight:700}
+#shop{display:none;position:fixed;inset:0;z-index:20;overflow-y:auto;padding:18px;background:radial-gradient(circle at top,#273457,#080b15 75%);color:#fff}
+#shop h1{text-align:center;margin:5px 0}#shopInfo{text-align:center;color:#aaa}
+#shopCoins{text-align:center;color:#ffe34c;font-size:21px;font-weight:700;margin:12px 0 18px}
+#skins{width:min(760px,100%);margin:auto;display:grid;grid-template-columns:repeat(2,minmax(130px,1fr));gap:12px}
+.skin{background:#20283d;border-radius:16px;padding:10px;text-align:center}.skinPreview{width:100%;height:110px;display:block;background:#111827;border-radius:12px;margin-bottom:7px}
+.skinName{font-size:17px;font-weight:700}.skinPrice{margin:5px;color:#ffe34c}
+.skin button{border:0;border-radius:9px;padding:9px 12px;background:#48c8ff;font-weight:700}.skin button:disabled{background:#555;color:#aaa}
+#closeShop{display:block;margin:18px auto;border:0;border-radius:10px;padding:11px 18px;background:#e74c4c;color:#fff;font-weight:700}
+@media(max-width:380px){#skins{gap:8px}.skin{padding:7px}.skinName{font-size:14px}}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="score">0</div>
+<div id="highscore">🏆 Highscore: 0</div>
+<div id="coins">🪙 0</div>
+<div id="message">👆 TIPPE ZUM STARTEN</div>
+<button id="shopButton">🛒 SHOP</button>
+<div id="shop"><h1>🐦 VOGEL-SHOP</h1><div id="shopInfo">Kaufe neue Tiere mit deinen Münzen!</div><div id="shopCoins">🪙 0 Münzen</div><div id="skins"></div><button id="closeShop">❌ Shop schließen</button></div>
+
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
+const scoreElement=document.getElementById("score"),highscoreElement=document.getElementById("highscore"),coinsElement=document.getElementById("coins"),messageElement=document.getElementById("message");
+const shop=document.getElementById("shop"),shopButton=document.getElementById("shopButton"),closeShop=document.getElementById("closeShop"),skinsElement=document.getElementById("skins"),shopCoins=document.getElementById("shopCoins");
+let W=innerWidth,H=innerHeight,frame=0,score=0,waiting=true,countdown=false,gameOver=false,holding=false,countdownStart=0,gameStartTime=0,pipes=[],coins=[],bird;
+let highscore=Number(localStorage.getItem("fdHigh")||0),totalCoins=Number(localStorage.getItem("fdCoins")||0),selectedSkin=localStorage.getItem("fdSkin")||"parrot",ownedSkins=JSON.parse(localStorage.getItem("fdOwned")||'["parrot"]');
+const skins=[
+{id:"parrot",name:"🦜 Papagei",price:0},{id:"penguin",name:"🐧 Pinguin",price:20},{id:"owl",name:"🦉 Eule",price:40},{id:"duck",name:"🦆 Ente",price:60},
+{id:"chick",name:"🐤 Küken",price:90},{id:"panda",name:"🐼 Panda",price:120},{id:"monkey",name:"🐒 Affe",price:160},{id:"rabbit",name:"🐰 Hase",price:200}
+];
+function saveData(){localStorage.setItem("fdHigh",highscore);localStorage.setItem("fdCoins",totalCoins);localStorage.setItem("fdSkin",selectedSkin);localStorage.setItem("fdOwned",JSON.stringify(ownedSkins))}
+function updateUI(){scoreElement.textContent=score;highscoreElement.textContent="🏆 Highscore: "+highscore;coinsElement.textContent="🪙 "+totalCoins;shopCoins.textContent="🪙 "+totalCoins+" Münzen"}
+function isLandscape(){return W>H} function birdSize(){return isLandscape()?27:42}
+function drawAnimal(t,id,cx,cy,size){
+ t.save();t.translate(cx,cy);let s=size/50,flap=Math.sin(frame*.25)*2;
+ if(id==="parrot"){t.fillStyle="#25b94b";t.beginPath();t.ellipse(0,3*s,21*s,24*s,0,0,Math.PI*2);t.fill();t.fillStyle="#e8e8e8";t.beginPath();t.arc(-7*s,-10*s,9*s,0,Math.PI*2);t.fill();t.fillStyle="#e84b37";t.beginPath();t.moveTo(-16*s,-8*s);t.lineTo(-33*s,-2*s);t.lineTo(-16*s,4*s);t.fill();t.fillStyle="#111";t.beginPath();t.arc(-9*s,-12*s,2.7*s,0,Math.PI*2);t.fill();t.fillStyle="#ffd83d";t.beginPath();t.ellipse(11*s,7*s,12*s,(7+flap)*s,-.3,0,Math.PI*2);t.fill()}
+ else if(id==="penguin"){t.fillStyle="#111827";t.beginPath();t.ellipse(0,3*s,21*s,25*s,0,0,Math.PI*2);t.fill();t.fillStyle="#f4f4f4";t.beginPath();t.ellipse(0,7*s,14*s,18*s,0,0,Math.PI*2);t.fill();t.fillStyle="#f0a52b";t.beginPath();t.moveTo(-4*s,-1*s);t.lineTo(-18*s,4*s);t.lineTo(-4*s,8*s);t.fill();t.fillStyle="#fff";t.beginPath();t.arc(-7*s,-10*s,3*s,0,Math.PI*2);t.arc(7*s,-10*s,3*s,0,Math.PI*2);t.fill();t.fillStyle="#111";t.beginPath();t.arc(-7*s,-10*s,1.5*s,0,Math.PI*2);t.arc(7*s,-10*s,1.5*s,0,Math.PI*2);t.fill()}
+ else if(id==="owl"){t.fillStyle="#8b5a35";t.beginPath();t.ellipse(0,4*s,22*s,25*s,0,0,Math.PI*2);t.fill();t.fillStyle="#6b4228";t.beginPath();t.moveTo(-19*s,-15*s);t.lineTo(-9*s,-29*s);t.lineTo(-3*s,-14*s);t.moveTo(19*s,-15*s);t.lineTo(9*s,-29*s);t.lineTo(3*s,-14*s);t.fill();t.fillStyle="#eee8d0";t.beginPath();t.arc(-9*s,-5*s,10*s,0,Math.PI*2);t.arc(9*s,-5*s,10*s,0,Math.PI*2);t.fill();t.fillStyle="#111";t.beginPath();t.arc(-9*s,-5*s,4*s,0,Math.PI*2);t.arc(9*s,-5*s,4*s,0,Math.PI*2);t.fill();t.fillStyle="#e5a52c";t.beginPath();t.moveTo(0,1*s);t.lineTo(-5*s,8*s);t.lineTo(5*s,8*s);t.fill()}
+ else if(id==="duck"){t.fillStyle="#ffe45b";t.beginPath();t.ellipse(2*s,7*s,23*s,18*s,0,0,Math.PI*2);t.fill();t.beginPath();t.arc(-8*s,-10*s,16*s,0,Math.PI*2);t.fill();t.fillStyle="#e6bd39";t.beginPath();t.ellipse(9*s,7*s,14*s,8*s,-.25,0,Math.PI*2);t.fill();t.fillStyle="#111";t.beginPath();t.arc(-13*s,-14*s,2.5*s,0,Math.PI*2);t.fill();t.fillStyle="#f28c28";t.beginPath();t.moveTo(-21*s,-8*s);t.lineTo(-35*s,-3*s);t.lineTo(-21*s,3*s);t.fill()}
+ else if(id==="chick"){t.fillStyle="#ffe94a";t.beginPath();t.arc(0,0,22*s,0,Math.PI*2);t.fill();t.fillStyle="#e7c936";t.beginPath();t.ellipse(14*s,5*s,12*s,7*s,-.3,0,Math.PI*2);t.fill();t.fillStyle="#111";t.beginPath();t.arc(-8*s,-7*s,3*s,0,Math.PI*2);t.fill();t.fillStyle="#ed8128";t.beginPath();t.moveTo(-18*s,-2*s);t.lineTo(-31*s,4*s);t.lineTo(-18*s,9*s);t.fill()}
+ else if(id==="panda"){t.fillStyle="#f2f2f2";t.beginPath();t.ellipse(3*s,6*s,22*s,25*s,0,0,Math.PI*2);t.fill();t.fillStyle="#171717";t.beginPath();t.arc(-13*s,-18*s,8*s,0,Math.PI*2);t.arc(13*s,-18*s,8*s,0,Math.PI*2);t.fill();t.beginPath();t.ellipse(-8*s,-5*s,7*s,9*s,-.4,0,Math.PI*2);t.ellipse(8*s,-5*s,7*s,9*s,.4,0,Math.PI*2);t.fill();t.fillStyle="#fff";t.beginPath();t.arc(-8*s,-5*s,2*s,0,Math.PI*2);t.arc(8*s,-5*s,2*s,0,Math.PI*2);t.fill()}
+ else if(id==="monkey"){t.fillStyle="#8c542d";t.beginPath();t.arc(-20*s,-4*s,10*s,0,Math.PI*2);t.arc(20*s,-4*s,10*s,0,Math.PI*2);t.fill();t.fillStyle="#a96838";t.beginPath();t.arc(0,0,23*s,0,Math.PI*2);t.fill();t.fillStyle="#d59a5a";t.beginPath();t.ellipse(0,5*s,16*s,13*s,0,0,Math.PI*2);t.fill();t.fillStyle="#111";t.beginPath();t.arc(-8*s,-5*s,2.5*s,0,Math.PI*2);t.arc(8*s,-5*s,2.5*s,0,Math.PI*2);t.fill()}
+ else {t.fillStyle="#d8d8d8";t.beginPath();t.ellipse(-10*s,-25*s,7*s,18*s,-.15,0,Math.PI*2);t.ellipse(10*s,-25*s,7*s,18*s,.15,0,Math.PI*2);t.fill();t.fillStyle="#f0a9b9";t.beginPath();t.ellipse(-10*s,-25*s,3*s,12*s,-.15,0,Math.PI*2);t.ellipse(10*s,-25*s,3*s,12*s,.15,0,Math.PI*2);t.fill();t.fillStyle="#e4e4e4";t.beginPath();t.arc(0,0,23*s,0,Math.PI*2);t.fill();t.fillStyle="#111";t.beginPath();t.arc(-9*s,-5*s,3*s,0,Math.PI*2);t.fill()}
+ t.restore()
+}
+function drawPreview(c,skin){let p=c.getContext("2d"),g=p.createLinearGradient(0,0,0,150);g.addColorStop(0,"#31466f");g.addColorStop(1,"#111827");p.fillStyle=g;p.fillRect(0,0,300,150);drawAnimal(p,skin.id,150,75,85)}
+function renderShop(){skinsElement.innerHTML="";updateUI();skins.forEach(skin=>{let box=document.createElement("div");box.className="skin";let p=document.createElement("canvas");p.className="skinPreview";p.width=300;p.height=150;drawPreview(p,skin);let n=document.createElement("div");n.className="skinName";n.textContent=skin.name;let pr=document.createElement("div");pr.className="skinPrice";pr.textContent=skin.price===0?"Kostenlos":"🪙 "+skin.price;let b=document.createElement("button");if(selectedSkin===skin.id){b.textContent="✅ Ausgewählt";b.disabled=true}else if(ownedSkins.includes(skin.id)){b.textContent="Auswählen";b.onclick=()=>{selectedSkin=skin.id;saveData();renderShop()}}else if(totalCoins>=skin.price){b.textContent="🛒 Kaufen";b.onclick=()=>{totalCoins-=skin.price;ownedSkins.push(skin.id);selectedSkin=skin.id;saveData();renderShop()}}else{b.textContent="🔒 Zu teuer";b.disabled=true}box.append(p,n,pr,b);skinsElement.appendChild(box)})}
+shopButton.onpointerdown=e=>{e.preventDefault();e.stopPropagation();holding=false;shop.style.display="block";renderShop()}
+closeShop.onpointerdown=e=>{e.preventDefault();e.stopPropagation();shop.style.display="none"}
+function resize(){W=innerWidth;H=innerHeight;let d=Math.min(devicePixelRatio||1,2);canvas.width=W*d;canvas.height=H*d;canvas.style.width=W+"px";canvas.style.height=H+"px";ctx.setTransform(d,0,0,d,0,0);if(bird&&(waiting||countdown)){bird.x=W*.25;bird.y=H*.5;bird.velocity=0}}
+addEventListener("resize",resize);
+function startGame(){waiting=false;countdown=true;countdownStart=performance.now();gameStartTime=performance.now();bird.x=W*.25;bird.y=H*.5;bird.velocity=0}
+function tap(){if(shop.style.display==="block")return;if(waiting){startGame();return}if(gameOver){newGame();return}if(countdown)return;if(!isLandscape()){bird.velocity=Math.max(-4.7,bird.velocity-1)}else bird.velocity=Math.max(-2.4,bird.velocity-.18)}
+canvas.addEventListener("pointerdown",e=>{e.preventDefault();holding=true;tap()},{passive:false});
+canvas.addEventListener("pointerup",e=>{e.preventDefault();holding=false},{passive:false});
+canvas.addEventListener("pointercancel",()=>holding=false);
+addEventListener("keydown",e=>{if(e.code==="Space"||e.code==="ArrowUp"){e.preventDefault();if(!holding)tap();holding=true}});
+addEventListener("keyup",e=>{if(e.code==="Space"||e.code==="ArrowUp")holding=false});
+function getDimension(){if(score>=70)return"end";if(score>=50)return"nether";if(score>=20)return"night";return"day"}
+function drawBackground(){let d=getDimension(),g=ctx.createLinearGradient(0,0,0,H);if(d==="day"){g.addColorStop(0,"#38b7ed");g.addColorStop(1,"#bceeff")}else if(d==="night"){g.addColorStop(0,"#050b22");g.addColorStop(1,"#294c69")}else if(d==="nether"){g.addColorStop(0,"#170107");g.addColorStop(.5,"#74101a");g.addColorStop(1,"#250205")}else{g.addColorStop(0,"#030109");g.addColorStop(1,"#1c0a30")}ctx.fillStyle=g;ctx.fillRect(0,0,W,H);if(d==="day"){for(let i=0;i<8;i++){let x=(i*190-frame*.3)%(W+240);if(x<-240)x+=W+240;let y=70+(i%4)*65;ctx.fillStyle="rgba(255,255,255,.55)";ctx.beginPath();ctx.arc(x,y,24,0,Math.PI*2);ctx.arc(x+30,y-12,32,0,Math.PI*2);ctx.arc(x+65,y,23,0,Math.PI*2);ctx.fill()}ctx.fillStyle="#ffe98a";ctx.beginPath();ctx.arc(W*.82,80,36,0,Math.PI*2);ctx.fill()}if(d==="night"||d==="end")drawStars();if(d==="night"){ctx.fillStyle="#fffbd2";ctx.beginPath();ctx.arc(W*.82,82,32,0,Math.PI*2);ctx.fill();ctx.fillStyle="#09152d";ctx.beginPath();ctx.arc(W*.91,72,29,0,Math.PI*2);ctx.fill();drawCity()}if(d==="nether"){for(let i=0;i<45;i++){let x=(i*97-frame*1.3)%(W+30);if(x<0)x+=W+30;let y=H-80-(i*43%(H*.7));ctx.fillStyle=i%2?"#ff4c18":"#ff9a28";ctx.beginPath();ctx.arc(x,y,2+(i%3),0,Math.PI*2);ctx.fill()}}}
+function drawStars(){for(let i=0;i<75;i++){let x=(i*91-frame*.08)%W;if(x<0)x+=W;let y=i*47%(H*.65);ctx.fillStyle=i%4===0?"#fff":"rgba(255,255,255,.65)";ctx.beginPath();ctx.arc(x,y,i%5===0?1.7:1,0,Math.PI*2);ctx.fill()}}
+function drawCity(){for(let i=0;i<15;i++){let x=i*85-(frame*.7%85),h=60+(i%5)*25;ctx.fillStyle="#111827";ctx.fillRect(x,H-58-h,58,h);for(let row=0;row<4;row++){ctx.fillStyle="#ffd75c";ctx.fillRect(x+8,H-45-h+row*25,8,10);ctx.fillRect(x+30,H-45-h+row*25,8,10)}ctx.fillStyle="#222";ctx.fillRect(x+68,H-100,4,42);ctx.fillStyle="#ffe27a";ctx.beginPath();ctx.arc(x+70,H-105,6,0,Math.PI*2);ctx.fill()}ctx.fillStyle="#24262b";ctx.fillRect(0,H-60,W,5);let carX=frame*3%(W+100)-100;ctx.fillStyle="#e84848";ctx.fillRect(carX,H-45,52,17);ctx.fillRect(carX+10,H-54,28,12);ctx.fillStyle="#111";ctx.beginPath();ctx.arc(carX+12,H-28,6,0,Math.PI*2);ctx.arc(carX+42,H-28,6,0,Math.PI*2);ctx.fill()}
+function drawPipe(x,y,w,h){if(h<=0)return;let d=getDimension();if(d==="nether"){ctx.fillStyle="#8b302b";ctx.fillRect(x,y,w,h);ctx.fillStyle="#c33b28";ctx.fillRect(x-7,y+h-18,w+14,18);ctx.fillStyle="#ff641c";for(let yy=y+10;yy<y+h;yy+=28)ctx.fillRect(x+7,yy,8,5);return}if(d==="end"){ctx.fillStyle="#3d254f";ctx.fillRect(x,y,w,h);ctx.fillStyle="#8e4fbd";ctx.fillRect(x-7,y+h-18,w+14,18);ctx.fillStyle="#bc75e9";for(let yy=y+10;yy<y+h;yy+=30)ctx.fillRect(x+8,yy,9,5);return}ctx.fillStyle=d==="night"?"#276a34":"#42a943";ctx.fillRect(x,y,w,h);ctx.fillStyle=d==="night"?"#378444":"#62c853";ctx.fillRect(x-7,y+h-18,w+14,18);ctx.fillStyle="#77d35c";for(let yy=y+10;yy<y+h;yy+=26)ctx.fillRect(x+5,yy,9,5)}
+function drawCoin(c){let spin=Math.abs(Math.cos(frame*.12+c.phase)),r=10*Math.max(.25,spin);ctx.shadowColor="#ffe45b";ctx.shadowBlur=12;ctx.fillStyle="#ffd52e";ctx.beginPath();ctx.ellipse(c.x,c.y,r,10,0,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle="#fff3a2";ctx.lineWidth=2;ctx.stroke()}
+function drawGround(){let d=getDimension();if(d==="nether"){ctx.fillStyle="#421015";ctx.fillRect(0,H-58,W,58);ctx.fillStyle="#ff4b16";ctx.fillRect(0,H-58,W,7);return}if(d==="end"){ctx.fillStyle="#130d1d";ctx.fillRect(0,H-58,W,58);ctx.fillStyle="#382747";for(let x=0;x<W;x+=40)ctx.fillRect(x-(frame*1.2%40),H-38,25,5);return}ctx.fillStyle=d==="night"?"#24572d":"#5db63e";ctx.fillRect(0,H-58,W,12);ctx.fillStyle=d==="night"?"#1b281a":"#704927";ctx.fillRect(0,H-46,W,46);for(let x=-(frame*3%28);x<W+30;x+=28){let sway=Math.sin(frame*.12+x*.05)*3;ctx.strokeStyle=d==="night"?"#3e843f":"#83d65a";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x,H-46);ctx.lineTo(x-4+sway,H-62);ctx.moveTo(x+8,H-46);ctx.lineTo(x+10+sway,H-64);ctx.stroke()}for(let x=-(frame*4%75);x<W+75;x+=75){ctx.fillStyle=d==="night"?"#2b4c29":"#875c32";ctx.fillRect(x,H-25,27,4);ctx.fillRect(x+38,H-12,13,3)}}
+function drawBird(){let size=birdSize(),rotation=Math.max(-.3,Math.min(.3,bird.velocity*.025));ctx.save();ctx.translate(bird.x,bird.y);if(!waiting&&!countdown)ctx.rotate(rotation);drawAnimal(ctx,selectedSkin,0,Math.sin(frame*.25)*2,size);ctx.restore()}
+function update(){frame++;if(waiting){bird.x=W*.25;bird.y=H*.5;bird.velocity=0;return}if(countdown){bird.x=W*.25;bird.y=H*.5;bird.velocity=0;let e=performance.now()-countdownStart,r=Math.ceil((3000-e)/1000);messageElement.textContent=r>0?r:"GO!";if(e>=3000){countdown=false;messageElement.textContent=""}return}if(gameOver)return;
+if(!isLandscape()){if(holding)bird.velocity-=.30;else bird.velocity+=.30;bird.velocity=Math.max(-5,Math.min(5.5,bird.velocity))}else{if(holding)bird.velocity-=.14;else bird.velocity+=.075;bird.velocity=Math.max(-2.3,Math.min(2,bird.velocity))}
+bird.y+=bird.velocity;
+let speed=Math.min(6.5,3.1+score*.045),elapsed=performance.now()-gameStartTime,FINAL_DISTANCE=speed*90,START_DISTANCE=speed*260,distance;
+if(elapsed<5000&&score===0)distance=START_DISTANCE;else if(score<16){let p=score/15,s=p*p*(3-2*p);distance=START_DISTANCE-(START_DISTANCE-FINAL_DISTANCE)*s}else distance=FINAL_DISTANCE;distance=Math.max(distance,FINAL_DISTANCE);
+let gap;if(isLandscape()){gap=score<=15?H*.72:Math.max(H*.50,330-(score-15)*2)}else{gap=score<=15?250:Math.max(120,250-(score-15)*5)}gap=Math.min(gap,H-80);
+if(pipes.length===0||pipes[pipes.length-1].x<W-distance){let topMargin=isLandscape()?15:55,bottomMargin=isLandscape()?65:90,available=H-58-topMargin-bottomMargin-gap,top=available<=0?(H-58-gap)/2:topMargin+Math.random()*available;top=Math.max(topMargin,Math.min(top,H-58-bottomMargin-gap));pipes.push({x:W+40,top,gap,passed:false});coins.push({x:W+95,y:top+gap/2,phase:Math.random()*20,collected:false})}
+for(const p of pipes){p.x-=speed;if(!p.passed&&p.x+58<bird.x){p.passed=true;score++;if(score>highscore)highscore=score;updateUI();saveData()}let r=birdSize()*.43;if(bird.x+r>p.x&&bird.x-r<p.x+58&&(bird.y-r<p.top||bird.y+r>p.top+p.gap))die()}
+for(const c of coins){c.x-=speed;if(!c.collected&&Math.hypot(bird.x-c.x,bird.y-c.y)<birdSize()*.65+12){c.collected=true;totalCoins++;updateUI();saveData()}}
+pipes=pipes.filter(p=>p.x>-100);coins=coins.filter(c=>c.x>-80);let r=birdSize()*.42;if(bird.y-r<0||bird.y+r>H-58)die()}
+function die(){if(gameOver)return;gameOver=true;holding=false;messageElement.textContent="💀 GAME OVER";setTimeout(()=>{if(gameOver)messageElement.textContent="👆 TIPPE ZUM NEUSTARTEN"},700)}
+function draw(){drawBackground();for(const p of pipes){drawPipe(p.x,0,58,p.top);drawPipe(p.x,p.top+p.gap,58,H-58-p.top-p.gap)}for(const c of coins)if(!c.collected)drawCoin(c);drawGround();drawBird()}
+function newGame(){bird={x:W*.25,y:H*.5,velocity:0};pipes=[];coins=[];score=0;frame=0;waiting=true;countdown=false;gameOver=false;holding=false;gameStartTime=0;scoreElement.textContent="0";messageElement.textContent="👆 TIPPE ZUM STARTEN";updateUI()}
+function gameLoop(){update();draw();requestAnimationFrame(gameLoop)}
+resize();newGame();updateUI();requestAnimationFrame(gameLoop);
+
+if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+</script>
+</body>
+</html>
